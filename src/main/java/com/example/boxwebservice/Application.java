@@ -30,47 +30,54 @@ public class Application implements CommandLineRunner {
     }
 
     @Override
-    public void run(String... args) throws Exception {
-        String filename = args[0];
-        File file = new File(filename);
-        if (file.exists()) {
-            try (FileInputStream fs = new FileInputStream(file)) {
+    public void run(String... args){
+        if (args.length > 0) {
+            String filename = args[0];
+            File file = new File(filename);
+            if (file.exists()) {
+                try (FileInputStream fs = new FileInputStream(file)) {
+                    jdbcTemplate.execute("drop table if exists BOX");
+                    jdbcTemplate.execute("drop table if exists ITEM");
+                    jdbcTemplate.execute("CREATE TABLE BOX\n" +
+                            "(ID INTEGER PRIMARY KEY,\n" +
+                            "CONTAINED_IN INTEGER\n" +
+                            ")");
+                    jdbcTemplate.execute("CREATE TABLE ITEM\n" +
+                            "(ID INTEGER PRIMARY KEY,\n" +
+                            "CONTAINED_IN INTEGER REFERENCES BOX(ID),\n" +
+                            "COLOR VARCHAR(100)\n" +
+                            ");");
 
-                jdbcTemplate.execute("drop table if exists BOX");
-                jdbcTemplate.execute("drop table if exists ITEM");
-                jdbcTemplate.execute("CREATE TABLE BOX\n" +
-                        "(ID INTEGER PRIMARY KEY,\n" +
-                        "CONTAINED_IN INTEGER\n" +
-                        ")");
-                jdbcTemplate.execute("CREATE TABLE ITEM\n" +
-                        "(ID INTEGER PRIMARY KEY,\n" +
-                        "CONTAINED_IN INTEGER REFERENCES BOX(ID),\n" +
-                        "COLOR VARCHAR(100)\n" +
-                        ");");
+                    DocumentBuilderFactory documentFactory = DocumentBuilderFactory.newInstance();
+                    DocumentBuilder builder = documentFactory.newDocumentBuilder();
+                    Document xmlDoc = builder.parse(fs);
 
-                DocumentBuilderFactory documentFactory = DocumentBuilderFactory.newInstance();
-                DocumentBuilder builder = documentFactory.newDocumentBuilder();
-                Document xmlDoc = builder.parse(fs);
+                    XPath xPath = XPathFactory.newInstance().newXPath();
+                    NodeList boxNodeList = (NodeList) xPath.evaluate(".//Box", xmlDoc, XPathConstants.NODESET);
+                    List<Box> boxList = BoxXmlUtils.getBoxes(boxNodeList);
+                    for (Box box : boxList) {
+                        jdbcTemplate.update("insert into Box values (?,?)",
+                                box.getId(),
+                                box.getContainedIn());
+                    }
 
-                XPath xPath = XPathFactory.newInstance().newXPath();
-                NodeList boxNodeList = (NodeList) xPath.evaluate(".//Box", xmlDoc, XPathConstants.NODESET);
-                List<Box> boxList = BoxXmlUtils.getBoxes(boxNodeList);
-                for (Box box : boxList) {
-                    jdbcTemplate.execute(String.format("insert into BOX values(%d,%d)", box.getId(),
-                            box.getContainedIn()));
+                    NodeList itemNodeList = (NodeList) xPath.evaluate(".//Item", xmlDoc, XPathConstants.NODESET);
+                    List<Item> itemList = BoxXmlUtils.getItems(itemNodeList);
+                    for (Item item : itemList) {
+                        jdbcTemplate.update("insert into ITEM values (?,?,?)",
+                                item.getId(),
+                                item.getContainedIn(),
+                                item.getColor());
+                    }
+                } catch (Exception ex) {
+                    System.out.println(ex.getMessage());
                 }
+            } else {
+                System.out.println("Such xml file doesn't exist");
 
-                NodeList itemNodeList = (NodeList) xPath.evaluate(".//Item", xmlDoc, XPathConstants.NODESET);
-                List<Item> itemList = BoxXmlUtils.getItems(itemNodeList);
-                for (Item item : itemList) {
-                    jdbcTemplate.execute(String.format("insert into ITEM values(%d,%d,%s)", item.getId(),
-                            item.getContainedIn(),
-                            item.getColor() == null ? "null" : "'" + item.getColor() + "'"));
-                }
-            } catch (Exception ex) {
-                System.out.println(ex);
-                System.exit(-1);
             }
-        } else {System.exit(-1);}
+        } else {
+            System.out.println("No command line argument");
+        }
     }
 }
